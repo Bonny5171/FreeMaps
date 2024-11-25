@@ -3,30 +3,52 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Google Maps com CSV</title>
+  <title>Google Maps com Autocomplete</title>
   <style>
     #map {
-      height: 100vh;
-      width: 100%;
+      height: 80vh; /* Altura do mapa */
+      width: 100%;   /* Largura do mapa */
+    }
+    #controls {
+      margin: 10px;
+      display: flex;
+      justify-content: center;
+    }
+    #autocomplete {
+      width: 300px;
+      padding: 10px;
+      font-size: 16px;
     }
   </style>
 </head>
 <body>
+  <div id="controls">
+    <input id="autocomplete" type="text" placeholder="Digite um endereço">
+  </div>
   <div id="map"></div>
 
   <script>
     let map;
+    let marker;
+    let polygon;
 
-    // Inicializa o mapa
     function initMap() {
+      
+      // Inicializa o mapa
       const center = { lat: 35.96486155557068, lng: -78.27706574805066 }; // USA
       map = new google.maps.Map(document.getElementById("map"), {
         zoom: 5,
         center: center,
       });
 
-      // Lista de arquivos CSV a serem lidos
-      const files = [
+     
+      // Inicializa o marcador vazio
+      marker = new google.maps.Marker({
+        map: map,
+      });
+
+       // Lista de arquivos CSV a serem lidos
+       const files = [
         './files_csv/border-street.csv',
         './files_csv/boston-city.csv',
         //'./files_csv/suffolk-county.csv',
@@ -46,8 +68,145 @@
           })
           .catch((error) => console.error(error));
       });
+      
+
+      // Adiciona a funcionalidade de autocomplete
+      const autocomplete = new google.maps.places.Autocomplete(
+        document.getElementById("autocomplete"),
+        {
+          types: ["geocode"], // Sugere apenas endereços
+          componentRestrictions: { country: ["br","us"] },
+        }
+      );
+
+      // Evento de seleção no autocomplete
+      autocomplete.addListener("place_changed", () => {
+        const place = autocomplete.getPlace();
+
+        // Verifica se o lugar possui coordenadas
+        if (!place.geometry || !place.geometry.location) {
+          alert("Por favor, selecione um local válido.");
+          return;
+        }
+
+        // Atualiza o mapa e marcador para a localização escolhida
+        map.setCenter(place.geometry.location);
+        map.setZoom(15);
+        
+        // Remove o polígono anterior, se existir
+        if (polygon) {
+          polygon.setMap(null);
+        }
+        debugger
+        // Destaca o bairro
+        highlightNeighborhood(place.geometry.location);
+
+        marker.setPosition(place.geometry.location);
+        marker.setTitle(place.formatted_address);
+      });
+      
     }
 
+    // Função para destacar o bairro
+    function highlightNeighborhood(location) {
+      const geocoder = new google.maps.Geocoder();
+    
+      // Usa Geocoding para obter informações detalhadas
+      geocoder.geocode({ location: location }, (results, status) => {
+        if (status === "OK" && results[0]) {
+          // Itera pelos resultados para encontrar o bairro
+          const addressComponents = results[0].address_components;
+          let neighborhood = null;
+    
+          addressComponents.forEach((component) => {
+            if (component.types.includes("sublocality") || component.types.includes("neighborhood")) {
+              neighborhood = component.long_name;
+            }
+          });
+    
+          if (neighborhood) {
+            console.log(`Bairro encontrado: ${neighborhood}`);
+    
+            // Usa o viewport como alternativa ao bounds
+            const viewport = results[0].geometry.viewport;
+    
+            // Cria o polígono a partir das coordenadas do viewport
+            const sw = viewport.getSouthWest();
+            const ne = viewport.getNorthEast();
+    
+            // Remove o polígono anterior, se existir
+            if (polygon) {
+              polygon.setMap(null);
+            }
+    
+            // Desenha um retângulo para destacar a área
+            polygon = new google.maps.Rectangle({
+              bounds: {
+                north: ne.lat(),
+                south: sw.lat(),
+                east: ne.lng(),
+                west: sw.lng(),
+              },
+              strokeColor: "#FF0000",
+              strokeOpacity: 0.8,
+              strokeWeight: 2,
+              fillColor: "#FF0000",
+              fillOpacity: 0.35,
+              map: map,
+            });
+          } else {
+            alert("Não foi possível identificar o bairro.");
+          }
+        } else {
+          console.error("Geocoding falhou:", status);
+        }
+      });
+    }
+/*    
+    function highlightNeighborhood(location) {
+      const geocoder = new google.maps.Geocoder();
+      debugger
+      // Usa Geocoding para obter informações detalhadas
+      geocoder.geocode({ location: location }, (results, status) => {
+        debugger
+        if (status === "OK" && results[0]) {
+          // Itera pelos resultados para encontrar o bairro
+          const addressComponents = results[0].address_components;
+          let neighborhood = null;
+          debugger
+          addressComponents.forEach((component) => {
+            debugger
+            if (component.types.includes("sublocality") || component.types.includes("neighborhood")) {
+              debugger
+              neighborhood = component.long_name;
+            }
+          });
+
+          if (neighborhood) {
+            console.log(`Bairro encontrado: ${neighborhood}`);
+
+            // Desenha um polígono fictício para o bairro (exemplo simples)
+            const bounds = results[0].geometry.bounds;
+            if (bounds) {
+              polygon = new google.maps.Rectangle({
+                bounds: bounds,
+                strokeColor: "#FF0000",
+                strokeOpacity: 0.8,
+                strokeWeight: 2,
+                fillColor: "#FF0000",
+                fillOpacity: 0.35,
+                map: map,
+              });
+            }
+          } else {
+            alert("Não foi possível identificar o bairro.");
+          }
+        } else {
+          console.error("Geocoding falhou:", status);
+        }
+      });
+    }
+*/
     // Processa o conteúdo do CSV e adiciona marcadores no mapa
     function processCSV(data) {
       const lines = data.split("\n");
@@ -66,11 +225,12 @@
         map: map,
       });
     }
+  
   </script>
 
-  <!-- Carrega a API do Google Maps -->
+  <!-- Carrega a API do Google Maps com a Places API habilitada -->
   <script 
-    src="https://maps.googleapis.com/maps/api/js?key=[token]&callback=initMap"
+    src="https://maps.googleapis.com/maps/api/js?key=[YOUR_TOKEN]&libraries=places&callback=initMap"
     async
     defer>
   </script>
