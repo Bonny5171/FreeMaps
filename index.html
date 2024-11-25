@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google Maps com CSV</title>
+  <style>
+    #map {
+      height: 100vh;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <script>
+    let map;
+
+    // Inicializa o mapa
+    function initMap() {
+      const center = { lat: 35.96486155557068, lng: -78.27706574805066 }; // USA
+      map = new google.maps.Map(document.getElementById("map"), {
+        zoom: 5,
+        center: center,
+      });
+
+      // Lista de arquivos CSV a serem lidos
+      const files = [
+        './files_csv/border-street.csv',
+        './files_csv/boston-city.csv',
+        //'./files_csv/suffolk-county.csv',
+      ];
+
+      // Ler e processar cada arquivo
+      files.forEach((file) => {
+        fetch(file)
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error(`Erro ao carregar o arquivo: ${file}`);
+            }
+            return response.text();
+          })
+          .then((data) => {
+            processCSV(data);
+          })
+          .catch((error) => console.error(error));
+      });
+    }
+
+    // Processa o conteúdo do CSV e adiciona marcadores no mapa
+    function processCSV(data) {
+      const lines = data.split("\n");
+      lines.forEach((line) => {
+        const [lat, lng] = line.split(",").map((value) => value.trim());
+        if (!isNaN(lat) && !isNaN(lng)) {
+          addMarker(parseFloat(lat), parseFloat(lng));
+        }
+      });
+    }
+
+    // Adiciona um marcador no mapa
+    function addMarker(lat, lng) {
+      new google.maps.Marker({
+        position: { lat, lng },
+        map: map,
+      });
+    }
+  </script>
+
+  <!-- Carrega a API do Google Maps -->
+  <script 
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjrQ-HaV6j4xbMXyjcfaojOWHvarEwnH4&callback=initMap"
+    async
+    defer>
+  </script>
+</body>
+</html>
