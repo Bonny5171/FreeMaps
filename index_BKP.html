@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google Maps com Autocomplete</title>
+  <style>
+    #map {
+      height: 80vh; /* Altura do mapa */
+      width: 100%;   /* Largura do mapa */
+    }
+    #controls {
+      margin: 10px;
+      display: flex;
+      justify-content: center;
+    }
+    #autocomplete {
+      width: 300px;
+      padding: 10px;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <input id="autocomplete" type="text" placeholder="Digite um endereço">
+  </div>
+  <div id="map"></div>
+
+  <script>
+    let map;
+    let marker;
+    let polygon;
+    let myCityData;
+
+    function initMap() {
+      
+      // Inicializa o mapa
+      const center = { lat: 35.96486155557068, lng: -78.27706574805066 }; // USA
+      map = new google.maps.Map(document.getElementById("map"), {
+        zoom: 5,
+        center: center,
+      });
+
+     
+      // Inicializa o marcador vazio
+      marker = new google.maps.Marker({
+        map: map,
+      });
+
+       // Lista de arquivos CSV a serem lidos
+       const files = [
+        './files_csv/border-street.csv',
+        './files_csv/boston-city.csv',
+        //'./files_csv/suffolk-county.csv',
+      ];
+
+      // Ler e processar cada arquivo
+      files.forEach((file) => {
+        fetch(file)
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error(`Erro ao carregar o arquivo: ${file}`);
+            }
+            return response.text();
+          })
+          .then((data) => {
+            processCSV(data);
+          })
+          .catch((error) => console.error(error));
+      });
+      
+
+      // Adiciona a funcionalidade de autocomplete
+      const autocomplete = new google.maps.places.Autocomplete(
+        document.getElementById("autocomplete"),
+        {
+          types: ["geocode"], // Sugere apenas endereços
+          componentRestrictions: { country: ["br","us"] },
+        }
+      );
+
+      // Evento de seleção no autocomplete
+      autocomplete.addListener("place_changed", () => {
+        const place = autocomplete.getPlace();
+debugger
+        this.cityState = this.cityStateHelper(place.formatted_address);
+
+        // Verifica se o lugar possui coordenadas
+        if (!place.geometry || !place.geometry.location) {
+          alert("Por favor, selecione um local válido.");
+          return;
+        }
+
+        // Atualiza o mapa e marcador para a localização escolhida
+        map.setCenter(place.geometry.location);
+        map.setZoom(15);
+        
+        // Remove o polígono anterior, se existir
+        if (polygon) {
+          polygon.setMap(null);
+        }
+        debugger
+        // Destaca o bairro
+        highlightNeighborhood(place.geometry.location);
+
+        marker.setPosition(place.geometry.location);
+        marker.setTitle(place.formatted_address);
+
+
+        // Cria um InfoWindow para este marcador
+        const infoWindowContent = `
+          <div style="max-width: 200px;">
+            <h3>[Titulo aqui]</h3>
+            <img src="https://tm.ibxk.com.br/2017/07/20/20143423547820.jpg" alt="sou_cego_:(" style="width: 100%; height: auto;"/>
+            <p>[Descrição]</p>
+          </div>
+        `;
+        const infoWindow = new google.maps.InfoWindow({
+          content: infoWindowContent,
+        });
+
+        // Adiciona evento de clique ao marcador
+        marker.addListener("click", () => {
+          infoWindow.open({
+            anchor: marker,
+            map,
+            shouldFocus: false,
+          });
+        });
+
+      });
+      
+    }
+
+
+    function cityStateHelper(str) {
+      let city = '';
+      let state = '';
+
+      if (!str) return '';
+
+      const addressParts = str.split(',');
+      city = addressParts[0];
+      // just the first two characters...
+      state = addressParts[1].trim().substring(0,2);
+      return `${city},${state}`;
+    }
+
+//------------------------------
+    function getCityIndex(data) {
+      let retIndex = null;
+      let adminIndex = null;
+
+      console.log(data);
+
+      data.map((curData, index) => {
+        // console.log(curData.type);
+        switch(curData.type) {
+          case "city":
+            retIndex = index;
+            break;
+          case "administrative":
+            adminIndex = index;
+            break;
+          default:
+            break;
+        }
+      });
+
+      // ... we punt to administrative...
+      if (retIndex === null && adminIndex !== null) {
+        retIndex = adminIndex;
+      }
+
+      return retIndex;
+    }
+
+    function getCityData(theCity) {
+
+      let apiPath = "https://nominatim.openstreetmap.org/search.php";
+
+      let params = {
+        q: theCity,
+        polygon_geojson: 1,
+        format: "jsonv2"
+      };
+
+      axios.get(apiPath, { params: params }  )
+        .then(response => {
+          let geoJSONDataChunk = response.data[0];
+
+
+          // geojson data from http://nominatim.openstreetmap.org/ needs
+          // to be wrapped, so that the google addGeoJson() call
+          // can handle it properly
+          const geoConf = {
+            "type": "FeatureCollection",
+            "features": [
+              { "type": "Feature",
+                "geometry": geoJSONDataChunk.geojson,
+                "id": "city"
+              }
+            ]
+          };
+
+          this.myCityData = new google.maps.Data();
+          this.myCityData.addGeoJson(geoConf, "city");
+          this.myCityData.setStyle({
+            fillColor: 'green',
+            fillOpacity: 0.1,
+            strokeWeight: 1
+          });
+
+          // send data to our Map component
+          eventBus.$emit('sendCityData', this.myCityData);
+        })
+    }
+
+
+
+//------------------------------
+
+    function highlightNeighborhood(location) {
+      const geocoder = new google.maps.Geocoder();
+      
+      // Usa Geocoding para obter informações detalhadas
+      geocoder.geocode({ location: location }, (results, status) => {
+      
+        if (status === "OK" && results[0]) {
+          // Itera pelos resultados para encontrar o bairro
+          const addressComponents = results[0].address_components;
+          let neighborhood = null;
+      
+          addressComponents.forEach((component) => {
+            if (component.types.includes("sublocality") || component.types.includes("neighborhood")) {
+              neighborhood = component.long_name;
+            }
+          });
+
+          if (neighborhood) {
+            console.log(`Bairro encontrado: ${neighborhood}`);
+
+            getCityData(neighborhood);
+            //getCityData(place.geometry.location);
+            
+
+          } else {
+            alert("Não foi possível identificar o bairro.");
+          }
+        } else {
+          console.error("Geocoding falhou:", status);
+        }
+      });
+    }
+
+/*
+    // Função para destacar o bairro
+    function highlightNeighborhood(location) {
+      const geocoder = new google.maps.Geocoder();
+    
+      // Usa Geocoding para obter informações detalhadas
+      geocoder.geocode({ location: location }, (results, status) => {
+        if (status === "OK" && results[0]) {
+          // Itera pelos resultados para encontrar o bairro
+          const addressComponents = results[0].address_components;
+          let neighborhood = null;
+    
+          addressComponents.forEach((component) => {
+            if (component.types.includes("sublocality") || component.types.includes("neighborhood")) {
+              neighborhood = component.long_name;
+            }
+          });
+    
+          if (neighborhood) {
+            console.log(`Bairro encontrado: ${neighborhood}`);
+    
+            // Usa o viewport como alternativa ao bounds
+            const viewport = results[0].geometry.viewport;
+    
+            // Cria o polígono a partir das coordenadas do viewport
+            const sw = viewport.getSouthWest();
+            const ne = viewport.getNorthEast();
+    
+            // Remove o polígono anterior, se existir
+            if (polygon) {
+              polygon.setMap(null);
+            }
+    
+            // Desenha um retângulo para destacar a área
+            polygon = new google.maps.Rectangle({
+              bounds: {
+                north: ne.lat(),
+                south: sw.lat(),
+                east: ne.lng(),
+                west: sw.lng(),
+              },
+              strokeColor: "#FF0000",
+              strokeOpacity: 0.8,
+              strokeWeight: 2,
+              fillColor: "#FF0000",
+              fillOpacity: 0.35,
+              map: map,
+            });
+          } else {
+            alert("Não foi possível identificar o bairro.");
+          }
+        } else {
+          console.error("Geocoding falhou:", status);
+        }
+      });
+    }
+*/
+
+/*    
+    function highlightNeighborhood(location) {
+      const geocoder = new google.maps.Geocoder();
+      debugger
+      // Usa Geocoding para obter informações detalhadas
+      geocoder.geocode({ location: location }, (results, status) => {
+        debugger
+        if (status === "OK" && results[0]) {
+          // Itera pelos resultados para encontrar o bairro
+          const addressComponents = results[0].address_components;
+          let neighborhood = null;
+          debugger
+          addressComponents.forEach((component) => {
+            debugger
+            if (component.types.includes("sublocality") || component.types.includes("neighborhood")) {
+              debugger
+              neighborhood = component.long_name;
+            }
+          });
+
+          if (neighborhood) {
+            console.log(`Bairro encontrado: ${neighborhood}`);
+
+            // Desenha um polígono fictício para o bairro (exemplo simples)
+            const bounds = results[0].geometry.bounds;
+            if (bounds) {
+              polygon = new google.maps.Rectangle({
+                bounds: bounds,
+                strokeColor: "#FF0000",
+                strokeOpacity: 0.8,
+                strokeWeight: 2,
+                fillColor: "#FF0000",
+                fillOpacity: 0.35,
+                map: map,
+              });
+            }
+          } else {
+            alert("Não foi possível identificar o bairro.");
+          }
+        } else {
+          console.error("Geocoding falhou:", status);
+        }
+      });
+    }
+*/
+    // Processa o conteúdo do CSV e adiciona marcadores no mapa
+    function processCSV(data) {
+      const lines = data.split("\n");
+      lines.forEach((line) => {
+        const [lat, lng] = line.split(",").map((value) => value.trim());
+        if (!isNaN(lat) && !isNaN(lng)) {
+          addMarker(parseFloat(lat), parseFloat(lng));
+        }
+      });
+    }
+
+    // Adiciona um marcador no mapa
+    function addMarker(lat, lng) {
+      let markerTemp = new google.maps.Marker({
+        position: { lat, lng },
+        map: map,
+      });
+
+      // Cria um InfoWindow para este marcador
+      const infoWindowContent = `
+        <div style="max-width: 200px;">
+          <h3>[Titulo aqui]</h3>
+          <img src="https://tm.ibxk.com.br/2017/07/20/20143423547820.jpg" alt="sou_cego_:(" style="width: 100%; height: auto;"/>
+          <p>[Descrição]</p>
+        </div>
+      `;
+      const infoWindow = new google.maps.InfoWindow({
+        content: infoWindowContent,
+      });
+
+      // Adiciona evento de clique ao marcador
+      markerTemp.addListener("click", () => {
+        infoWindow.open({
+          anchor: markerTemp,
+          map,
+          shouldFocus: false,
+        });
+      });
+
+    }
+
+  </script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.2.1/axios.min.js"></script>
+
+  <!-- Carrega a API do Google Maps com a Places API habilitada -->
+  <script 
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjrQ-HaV6j4xbMXyjcfaojOWHvarEwnH4&libraries=places&callback=initMap"
+    async
+    defer>
+  </script>
+</body>
+</html>

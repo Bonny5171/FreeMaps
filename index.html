@@ -74,7 +74,8 @@
       const autocomplete = new google.maps.places.Autocomplete(
         document.getElementById("autocomplete"),
         {
-          types: ["geocode"], // Sugere apenas endereços
+          //types: ["geocode"], // Sugere apenas endereços
+          types: ["(regions)"],
           componentRestrictions: { country: ["br","us"] },
         }
       );
@@ -97,7 +98,7 @@
         if (polygon) {
           polygon.setMap(null);
         }
-        debugger
+
         // Destaca o bairro
         highlightNeighborhood(place.geometry.location);
 
@@ -107,6 +108,35 @@
       
     }
 
+    function getCityState(address) {
+      let cs = '';
+
+      // this is not foolproof.. do a deep dive into the address components
+      // and their type, if you are going to be more thorough.. I am just
+      // working off of the formatted address
+      // more info at https://developers.google.com/maps/documentation/geocoding/start?csw=1
+      address.map(curAddress => {        
+        if (curAddress.types[0] === "locality") {
+          cs = cityStateHelper(curAddress.formatted_address);
+        }
+      });
+      
+      return cs;
+    }
+
+    function cityStateHelper(str) {
+      let city = '';
+      let state = '';
+
+      if (!str) return '';
+
+      const addressParts = str.split(',');
+      city = addressParts[0];
+      // just the first two characters...
+      state = addressParts[1].trim().substring(0,2);
+      return `${city},${state}`;
+    }
+
     // Função para destacar o bairro
     function highlightNeighborhood(location) {
       const geocoder = new google.maps.Geocoder();
@@ -114,19 +144,115 @@
       // Usa Geocoding para obter informações detalhadas
       geocoder.geocode({ location: location }, (results, status) => {
         if (status === "OK" && results[0]) {
+
+          // parse the address to get city and state
+          let cityState = getCityState(results);
+          
           // Itera pelos resultados para encontrar o bairro
           const addressComponents = results[0].address_components;
-          let neighborhood = null;
+          let neighborhood = cityState;
     
+          debugger
+
           addressComponents.forEach((component) => {
             if (component.types.includes("sublocality") || component.types.includes("neighborhood")) {
               neighborhood = component.long_name;
             }
           });
     
+          debugger
+          
           if (neighborhood) {
             console.log(`Bairro encontrado: ${neighborhood}`);
-    
+
+            let apiPath = "https://nominatim.openstreetmap.org/search.php";
+            let params = {
+              //q: `${theCity},USA`,
+              q: `${neighborhood}`,
+              polygon_geojson: 1,
+              format: "json"
+            };
+
+            console.log(params);
+
+            let polygonType = null;
+
+            axios.get(apiPath, { params: params }  )
+                .then(response => {
+                  debugger
+                  let responseIndex = getCityIndex(response.data);
+                  debugger
+                  let geoJSONDataChunk = response.data[responseIndex];
+                  debugger
+                  polygonType = geoJSONDataChunk?.geojson.type || null;
+        
+                  // geojson data from http://nominatim.openstreetmap.org/ needs
+                  // to be wrapped, so that the google addGeoJson() call
+                  // can handle it properly
+                  const geoConf = {
+                    "type": "FeatureCollection",
+                    "features": [
+                      { "type": "Feature",
+                        "geometry": geoJSONDataChunk?.geojson,
+                        "id": "city"
+                      }
+                    ]
+                  };
+                  /*
+                  const geojson = {
+                    type: "FeatureCollection",
+                    features: [
+                      {
+                        type: "Feature",
+                        properties: { name: "Bairro 1" },
+                        geometry: {
+                          type: "Polygon",
+                          coordinates: [
+                            [
+                              [-46.6333, -23.5505],
+                              [-46.6433, -23.5505],
+                              [-46.6433, -23.5605],
+                              [-46.6333, -23.5605],
+                              [-46.6333, -23.5505],
+                            ],
+                          ],
+                        },
+                      },
+                      {
+                        type: "Feature",
+                        properties: { name: "Bairro 2" },
+                        geometry: {
+                          type: "Polygon",
+                          coordinates: [
+                            [
+                              [-46.6533, -23.5405],
+                              [-46.6633, -23.5405],
+                              [-46.6633, -23.5505],
+                              [-46.6533, -23.5505],
+                              [-46.6533, -23.5405],
+                            ],
+                          ],
+                        },
+                      },
+                    ],
+                  };
+                  */
+
+                  debugger
+                  // Adiciona o GeoJSON ao mapa
+                  map.data.addGeoJson(geoConf);
+            
+                  // Define o estilo dos polígonos
+                  map.data.setStyle({
+                    fillColor: "#FF0000",
+                    strokeColor: "#000000",
+                    strokeWeight: 1,
+                    fillOpacity: 0.35,
+                  });
+                });
+            
+
+            /*
             // Usa o viewport como alternativa ao bounds
             const viewport = results[0].geometry.viewport;
     
@@ -154,6 +280,7 @@
               fillOpacity: 0.35,
               map: map,
             });
+            */
           } else {
             alert("Não foi possível identificar o bairro.");
           }
@@ -162,51 +289,35 @@
         }
       });
     }
-/*    
-    function highlightNeighborhood(location) {
-      const geocoder = new google.maps.Geocoder();
-      debugger
-      // Usa Geocoding para obter informações detalhadas
-      geocoder.geocode({ location: location }, (results, status) => {
-        debugger
-        if (status === "OK" && results[0]) {
-          // Itera pelos resultados para encontrar o bairro
-          const addressComponents = results[0].address_components;
-          let neighborhood = null;
-          debugger
-          addressComponents.forEach((component) => {
-            debugger
-            if (component.types.includes("sublocality") || component.types.includes("neighborhood")) {
-              debugger
-              neighborhood = component.long_name;
-            }
-          });
 
-          if (neighborhood) {
-            console.log(`Bairro encontrado: ${neighborhood}`);
+    function getCityIndex(data) {
+      let retIndex = null;
+      let adminIndex = null;
 
-            // Desenha um polígono fictício para o bairro (exemplo simples)
-            const bounds = results[0].geometry.bounds;
-            if (bounds) {
-              polygon = new google.maps.Rectangle({
-                bounds: bounds,
-                strokeColor: "#FF0000",
-                strokeOpacity: 0.8,
-                strokeWeight: 2,
-                fillColor: "#FF0000",
-                fillOpacity: 0.35,
-                map: map,
-              });
-            }
-          } else {
-            alert("Não foi possível identificar o bairro.");
-          }
-        } else {
-          console.error("Geocoding falhou:", status);
+      console.log(data);
+
+      data.map((curData, index) => {
+        // console.log(curData.type);
+        switch(curData.type) {
+          case "city":
+            retIndex = index;
+            break;
+          case "administrative":
+            adminIndex = index;
+            break;
+          default:
+            break;
         }
       });
+
+      // ... we punt to administrative...
+      if (retIndex === null && adminIndex !== null) {
+        retIndex = adminIndex;
+      }
+
+      return retIndex;
     }
-*/
+
     // Processa o conteúdo do CSV e adiciona marcadores no mapa
     function processCSV(data) {
       const lines = data.split("\n");
@@ -228,9 +339,11 @@
   
   </script>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.2.1/axios.min.js"></script>
+
   <!-- Carrega a API do Google Maps com a Places API habilitada -->
   <script 
-    src="https://maps.googleapis.com/maps/api/js?key=[YOUR_TOKEN]&libraries=places&callback=initMap"
+    src="https://maps.googleapis.com/maps/api/js?key=TOKEN&libraries=places&callback=initMap"
     async
     defer>
   </script>
