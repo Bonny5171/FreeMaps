@@ -33,6 +33,7 @@
     let polygon;
     let googleGeometryMultiPoly = [];
     let numGeometries = 0;
+    const infoWindows = [];
 
     function initMap() {
       
@@ -131,7 +132,6 @@
       
     }
 
-    // Função para obter a cidade dos address_components
     function getCityFromAddressComponents(addressComponents) {
       for (const component of addressComponents) {
         if (
@@ -146,7 +146,6 @@
       return ""; // Caso não encontre o componente
     }
     
-    // Função para obter o estado dos address_components
     function getStateFromAddressComponents(addressComponents) {
       for (const component of addressComponents) {
         if (component.types.includes("administrative_area_level_2")) {
@@ -311,7 +310,6 @@
       return retIndex;
     }
 
-    // Processa o conteúdo do CSV e adiciona marcadores no mapa
     function processCSV(data) {
       const lines = data.split("\n");
       lines.forEach((line) => {
@@ -322,7 +320,6 @@
       });
     }
 
-    // Adiciona um marcador no mapa
     function addMarker(lat, lng) {
       let markerTemp = new google.maps.Marker({
         position: { lat, lng },
@@ -341,8 +338,11 @@
         content: infoWindowContent,
       });
 
+      infoWindows.push(infoWindow);
+      
       // Adiciona evento de clique ao marcador
       markerTemp.addListener("click", () => {
+        closeAllInfoWindows(); // Fecha todos os InfoWindows antes de abrir o novo
         infoWindow.open({
           anchor: markerTemp,
           map,
@@ -350,8 +350,12 @@
         });
       });
     }
+  
+    function closeAllInfoWindows() {
+      infoWindows.forEach((infoWindow) => infoWindow.close());
+    }
   </script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.2.1/axios.min.js"></script>
-  <script src="https://maps.googleapis.com/maps/api/js?keyTOKEN&libraries=places&callback=initMap" async defer></script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjrQ-HaV6j4xbMXyjcfaojOWHvarEwnH4&libraries=places&callback=initMap" async defer></script>
 </body>
 </html>
