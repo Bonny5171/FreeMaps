@@ -82,7 +82,12 @@
 
       // Evento de seleção no autocomplete
       autocomplete.addListener("place_changed", () => {
-        const place = autocomplete.getPlace();        
+        const place = autocomplete.getPlace();
+
+        if (place == null) {
+          alert("Escolha uma opção de endereço.")
+          return
+        }
 
         marker.setPosition(place.geometry.location);
         marker.setTitle(place.formatted_address);
@@ -144,7 +149,7 @@
     // Função para obter o estado dos address_components
     function getStateFromAddressComponents(addressComponents) {
       for (const component of addressComponents) {
-        if (component.types.includes("administrative_area_level_1")) {
+        if (component.types.includes("administrative_area_level_2")) {
           return component.long_name; // Nome completo do estado
         }
       }
@@ -154,7 +159,7 @@
     function getCityData(theCity) {
       let apiPath = "https://nominatim.openstreetmap.org/search.php";
 
-      console.log('CIDADE - ESTADO:', theCity);
+      console.log(`Highlight layer: "${theCity}"`);
 
       let params = {
         q: `${theCity}`,
@@ -172,6 +177,11 @@
           let responseIndex = getCityIndex(dataRep);
           //let responseIndex = 0;
           let geoJSONDataChunk = dataRep[responseIndex];
+
+          if (geoJSONDataChunk?.geojson.type == null) {
+            console.log('Layer não encontrado');
+            return
+          }
 
           polygonType = geoJSONDataChunk.geojson.type || null;
 
@@ -342,6 +352,6 @@
     }
   </script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.2.1/axios.min.js"></script>
-  <script src="https://maps.googleapis.com/maps/api/js?key=TOKEN&libraries=places&callback=initMap" async defer></script>
+  <script src="https://maps.googleapis.com/maps/api/js?keyTOKEN&libraries=places&callback=initMap" async defer></script>
 </body>
 </html>
