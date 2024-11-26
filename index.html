@@ -31,6 +31,8 @@
     let map;
     let marker;
     let polygon;
+    let googleGeometryMultiPoly = [];
+    let numGeometries = 0;
 
     function initMap() {
       
@@ -71,28 +73,41 @@
       
 
       // Adiciona a funcionalidade de autocomplete
-      const autocomplete = new google.maps.places.Autocomplete(
-        document.getElementById("autocomplete"),
-        {
-          //types: ["geocode"], // Sugere apenas endereços
-          types: ["(regions)"],
-          componentRestrictions: { country: ["br","us"] },
-        }
-      );
+      const input = document.getElementById("autocomplete");
+      const autocomplete = new google.maps.places.Autocomplete(input, {
+        // types: ["(regions)"], // Filtra apenas cidades
+        types: ["geocode"],
+        //componentRestrictions: { country: "br" }, // Restringe ao Brasil (opcional)
+      });
 
       // Evento de seleção no autocomplete
       autocomplete.addListener("place_changed", () => {
-        const place = autocomplete.getPlace();
+        const place = autocomplete.getPlace();        
+
+        marker.setPosition(place.geometry.location);
+        marker.setTitle(place.formatted_address);
+        
+        map.setCenter(place.geometry.location);
+        map.setZoom(15);
+
+        // InfoWindow do marker
+        const infoWindowContent = `<div style="max-width: 200px;"><h3>[Titulo aqui]</h3><img src="https://tm.ibxk.com.br/2017/07/20/20143423547820.jpg" alt="sou_cego_:(" style="width: 100%; height: auto;"/><p>[Descrição]</p></div>`;
+        const infoWindow = new google.maps.InfoWindow({ content: infoWindowContent });
+
+        // Adiciona evento de clique ao marcador
+        marker.addListener("click", () => {
+          infoWindow.open({
+            anchor: marker,
+            map,
+            shouldFocus: false,
+          });
+        });
 
         // Verifica se o lugar possui coordenadas
         if (!place.geometry || !place.geometry.location) {
           alert("Por favor, selecione um local válido.");
           return;
         }
-
-        // Atualiza o mapa e marcador para a localização escolhida
-        map.setCenter(place.geometry.location);
-        map.setZoom(15);
         
         // Remove o polígono anterior, se existir
         if (polygon) {
@@ -100,12 +115,133 @@
         }
 
         // Destaca o bairro
-        highlightNeighborhood(place.geometry.location);
+        // highlightNeighborhood(place.geometry.location);
 
-        marker.setPosition(place.geometry.location);
-        marker.setTitle(place.formatted_address);
+        const city = getCityFromAddressComponents(place.address_components);
+        const state = getStateFromAddressComponents(place.address_components);
+ 
+        getCityData(`${city}, ${state}`);
+
       });
       
+    }
+
+    // Função para obter a cidade dos address_components
+    function getCityFromAddressComponents(addressComponents) {
+      for (const component of addressComponents) {
+        if (
+             component.types.includes("sublocality_level_1")
+          || component.types.includes("locality")
+          || component.types.includes("political")
+          || component.types.includes("sublocality")
+        ) {
+          return component.long_name; // Retorna o nome completo da cidade
+        }
+      }
+      return ""; // Caso não encontre o componente
+    }
+    
+    // Função para obter o estado dos address_components
+    function getStateFromAddressComponents(addressComponents) {
+      for (const component of addressComponents) {
+        if (component.types.includes("administrative_area_level_1")) {
+          return component.long_name; // Nome completo do estado
+        }
+      }
+      return null; // Caso não encontre o estado
+    }
+    
+    function getCityData(theCity) {
+      let apiPath = "https://nominatim.openstreetmap.org/search.php";
+
+      console.log('CIDADE - ESTADO:', theCity);
+
+      let params = {
+        q: `${theCity}`,
+        polygon_geojson: 1,
+        format: "jsonv2"
+      };
+
+      console.log(params);
+
+      let polygonType = null;
+
+      axios.get(apiPath, { params: params }  )
+        .then(response => {
+          const dataRep = response.data.filter(obj => obj.type === 'administrative')
+          let responseIndex = getCityIndex(dataRep);
+          //let responseIndex = 0;
+          let geoJSONDataChunk = dataRep[responseIndex];
+
+          polygonType = geoJSONDataChunk.geojson.type || null;
+
+          // geojson data from http://nominatim.openstreetmap.org/ needs
+          // to be wrapped, so that the google addGeoJson() call
+          // can handle it properly
+          const geoConf = { 
+            "type": "FeatureCollection",
+            "features": [
+              { "type": "Feature",
+                "geometry": geoJSONDataChunk.geojson,
+                "id": "city"
+              }
+            ]
+          };
+
+          // Adiciona o GeoJSON ao mapa
+          map.data.addGeoJson(geoConf, "city");
+
+          map.data.setStyle({
+            fillColor: 'green',
+            fillOpacity: 0.1,
+            strokeWeight: 1
+          });
+
+          // we want to get geometry into our local objects, and create
+          // google geometry objects with it.. hence the naming...  
+          let localCity = map.data.getFeatureById('city');
+          let allLocalMultiPolys = [];
+          let localGeometry = null;
+
+          // if a Polygon, our coordinates are at coordinates[0]
+          // if a MultiPolygon, we loop through coordinates[0]...coordinates[n]
+          if (polygonType === 'Polygon') {
+            localGeometry = localCity.getGeometry();
+            let numArrays = localGeometry.getLength();
+  
+            allLocalMultiPolys[0] = [];
+
+            for (let i = 0; i < numArrays; i++) {
+              allLocalMultiPolys[0].push(localGeometry.getAt(i).getArray());
+            }
+  
+            googleGeometryMultiPoly[0] = new google.maps.Polygon({
+              paths: allLocalMultiPolys[0]
+            })
+
+            numGeometries = 1;
+
+          } else {
+            localGeometry = localCity.getGeometry();
+            let localGeometryArray = localCity.getGeometry().getArray();
+
+            localGeometryArray.map((item, i) => {
+              allLocalMultiPolys[i] = [];
+              let curPolyNum = item.getLength();
+              for (let j = 0; j < curPolyNum; j++) {
+                allLocalMultiPolys[i].push(item.getAt(j).getArray());
+              }
+              googleGeometryMultiPoly[i] = [];
+              googleGeometryMultiPoly[i] = new google.maps.Polygon({
+                paths: allLocalMultiPolys[i]
+              });
+            });
+
+            numGeometries = localGeometry.getLength();
+          }
+
+          
+        });
     }
 
     function getCityState(address) {
@@ -135,159 +271,6 @@
       // just the first two characters...
       state = addressParts[1].trim().substring(0,2);
       return `${city},${state}`;
-    }
-
-    // Função para destacar o bairro
-    function highlightNeighborhood(location) {
-      const geocoder = new google.maps.Geocoder();
-    
-      // Usa Geocoding para obter informações detalhadas
-      geocoder.geocode({ location: location }, (results, status) => {
-        if (status === "OK" && results[0]) {
-
-          // parse the address to get city and state
-          let cityState = getCityState(results);
-          
-          // Itera pelos resultados para encontrar o bairro
-          const addressComponents = results[0].address_components;
-          let neighborhood = cityState;
-    
-          debugger
-
-          addressComponents.forEach((component) => {
-            if (component.types.includes("sublocality") || component.types.includes("neighborhood")) {
-              neighborhood = component.long_name;
-            }
-          });
-    
-          debugger
-          
-          if (neighborhood) {
-            console.log(`Bairro encontrado: ${neighborhood}`);
-
-            let apiPath = "https://nominatim.openstreetmap.org/search.php";
-            let params = {
-              //q: `${theCity},USA`,
-              q: `${neighborhood}`,
-              polygon_geojson: 1,
-              format: "json"
-            };
-
-            console.log(params);
-
-            let polygonType = null;
-
-            axios.get(apiPath, { params: params }  )
-                .then(response => {
-                  debugger
-                  let responseIndex = getCityIndex(response.data);
-                  debugger
-                  let geoJSONDataChunk = response.data[responseIndex];
-                  debugger
-                  polygonType = geoJSONDataChunk?.geojson.type || null;
-        
-                  // geojson data from http://nominatim.openstreetmap.org/ needs
-                  // to be wrapped, so that the google addGeoJson() call
-                  // can handle it properly
-                  const geoConf = {
-                    "type": "FeatureCollection",
-                    "features": [
-                      { "type": "Feature",
-                        "geometry": geoJSONDataChunk?.geojson,
-                        "id": "city"
-                      }
-                    ]
-                  };
-                  /*
-                  const geojson = {
-                    type: "FeatureCollection",
-                    features: [
-                      {
-                        type: "Feature",
-                        properties: { name: "Bairro 1" },
-                        geometry: {
-                          type: "Polygon",
-                          coordinates: [
-                            [
-                              [-46.6333, -23.5505],
-                              [-46.6433, -23.5505],
-                              [-46.6433, -23.5605],
-                              [-46.6333, -23.5605],
-                              [-46.6333, -23.5505],
-                            ],
-                          ],
-                        },
-                      },
-                      {
-                        type: "Feature",
-                        properties: { name: "Bairro 2" },
-                        geometry: {
-                          type: "Polygon",
-                          coordinates: [
-                            [
-                              [-46.6533, -23.5405],
-                              [-46.6633, -23.5405],
-                              [-46.6633, -23.5505],
-                              [-46.6533, -23.5505],
-                              [-46.6533, -23.5405],
-                            ],
-                          ],
-                        },
-                      },
-                    ],
-                  };
-                  */
-
-                  debugger
-                  // Adiciona o GeoJSON ao mapa
-                  map.data.addGeoJson(geoConf);
-            
-                  // Define o estilo dos polígonos
-                  map.data.setStyle({
-                    fillColor: "#FF0000",
-                    strokeColor: "#000000",
-                    strokeWeight: 1,
-                    fillOpacity: 0.35,
-                  });
-                });
-            
-
-            /*
-            // Usa o viewport como alternativa ao bounds
-            const viewport = results[0].geometry.viewport;
-    
-            // Cria o polígono a partir das coordenadas do viewport
-            const sw = viewport.getSouthWest();
-            const ne = viewport.getNorthEast();
-    
-            // Remove o polígono anterior, se existir
-            if (polygon) {
-              polygon.setMap(null);
-            }
-    
-            // Desenha um retângulo para destacar a área
-            polygon = new google.maps.Rectangle({
-              bounds: {
-                north: ne.lat(),
-                south: sw.lat(),
-                east: ne.lng(),
-                west: sw.lng(),
-              },
-              strokeColor: "#FF0000",
-              strokeOpacity: 0.8,
-              strokeWeight: 2,
-              fillColor: "#FF0000",
-              fillOpacity: 0.35,
-              map: map,
-            });
-            */
-          } else {
-            alert("Não foi possível identificar o bairro.");
-          }
-        } else {
-          console.error("Geocoding falhou:", status);
-        }
-      });
     }
 
     function getCityIndex(data) {
@@ -331,21 +314,34 @@
 
     // Adiciona um marcador no mapa
     function addMarker(lat, lng) {
-      new google.maps.Marker({
+      let markerTemp = new google.maps.Marker({
         position: { lat, lng },
         map: map,
       });
+
+      // Cria um InfoWindow para este marcador
+      const infoWindowContent = `
+        <div style="max-width: 200px;">
+          <h3>[Titulo aqui]</h3>
+          <img src="https://tm.ibxk.com.br/2017/07/20/20143423547820.jpg" alt="sou_cego_:(" style="width: 100%; height: auto;"/>
+          <p>[Descrição]</p>
+        </div>
+      `;
+      const infoWindow = new google.maps.InfoWindow({
+        content: infoWindowContent,
+      });
+
+      // Adiciona evento de clique ao marcador
+      markerTemp.addListener("click", () => {
+        infoWindow.open({
+          anchor: markerTemp,
+          map,
+          shouldFocus: false,
+        });
+      });
     }
-  
   </script>
-
   <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.2.1/axios.min.js"></script>
-
-  <!-- Carrega a API do Google Maps com a Places API habilitada -->
-  <script 
-    src="https://maps.googleapis.com/maps/api/js?key=TOKEN&libraries=places&callback=initMap"
-    async
-    defer>
-  </script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=TOKEN&libraries=places&callback=initMap" async defer></script>
 </body>
 </html>
