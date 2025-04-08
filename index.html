@@ -19,6 +19,29 @@
       padding: 10px;
       font-size: 16px;
     }
+
+    /* HTML marker styles */
+    .price-tag {
+      background-color: #0e6959;
+      border-radius: 8px;
+      color: #FFFFFF;
+      font-size: 11px;
+      padding: 3px 5px;
+      position: relative;
+    }
+
+    .price-tag::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 100%;
+      transform: translate(-50%, 0);
+      width: 0;
+      height: 0;
+      border-left: 8px solid transparent;
+      border-right: 8px solid transparent;
+      border-top: 8px solid #0e6959;
+    }
   </style>
 </head>
 <body>
@@ -30,48 +53,34 @@
   <script>
     let map;
     let marker;
+    let markers = [];
     let polygon;
     let googleGeometryMultiPoly = [];
     let numGeometries = 0;
     const infoWindows = [];
 
-    function initMap() {
+    async function initMap() {
       
       // Inicializa o mapa
       const center = { lat: 35.96486155557068, lng: -78.27706574805066 }; // USA
-      map = new google.maps.Map(document.getElementById("map"), {
+
+      const { Map } = await google.maps.importLibrary("maps");
+      map = new Map(document.getElementById("map"), {
+        center: center,
+        zoom: 5,
+        mapId: "4504f8b37365c3d0",
+      });
+
+      /*map = new google.maps.Map(document.getElementById("map"), {
         zoom: 5,
         center: center,
-      });
+      });*/
 
      
       // Inicializa o marcador vazio
       marker = new google.maps.Marker({
         map: map,
       });
-
-       // Lista de arquivos CSV a serem lidos
-       const files = [
-        './files_csv/border-street.csv',
-        './files_csv/boston-city.csv',
-        //'./files_csv/suffolk-county.csv',
-      ];
-
-      // Ler e processar cada arquivo
-      files.forEach((file) => {
-        fetch(file)
-          .then((response) => {
-            if (!response.ok) {
-              throw new Error(`Erro ao carregar o arquivo: ${file}`);
-            }
-            return response.text();
-          })
-          .then((data) => {
-            processCSV(data);
-          })
-          .catch((error) => console.error(error));
-      });
-      
 
       // Adiciona a funcionalidade de autocomplete
       const input = document.getElementById("autocomplete");
@@ -90,24 +99,24 @@
           return
         }
 
-        marker.setPosition(place.geometry.location);
-        marker.setTitle(place.formatted_address);
+        // marker.setPosition(place.geometry.location);
+        // marker.setTitle(place.formatted_address);
         
         map.setCenter(place.geometry.location);
         map.setZoom(15);
 
         // InfoWindow do marker
-        const infoWindowContent = `<div style="max-width: 200px;"><h3>[Titulo aqui]</h3><img src="https://tm.ibxk.com.br/2017/07/20/20143423547820.jpg" alt="sou_cego_:(" style="width: 100%; height: auto;"/><p>[Descrição]</p></div>`;
-        const infoWindow = new google.maps.InfoWindow({ content: infoWindowContent });
+        // const infoWindowContent = `<div style="max-width: 200px;"><h3>[Titulo aqui]</h3><img src="https://tm.ibxk.com.br/2017/07/20/20143423547820.jpg" alt="sou_cego_:(" style="width: 100%; height: auto;"/><p>[Descrição]</p></div>`;
+        // const infoWindow = new google.maps.InfoWindow({ content: infoWindowContent });
 
         // Adiciona evento de clique ao marcador
-        marker.addListener("click", () => {
-          infoWindow.open({
-            anchor: marker,
-            map,
-            shouldFocus: false,
-          });
-        });
+        // marker.addListener("click", () => {
+        //  infoWindow.open({
+        //    anchor: marker,
+        //    map,
+        //    shouldFocus: false,
+        //  });
+        // });
 
         // Verifica se o lugar possui coordenadas
         if (!place.geometry || !place.geometry.location) {
@@ -116,9 +125,9 @@
         }
         
         // Remove o polígono anterior, se existir
-        if (polygon) {
-          polygon.setMap(null);
-        }
+        //if (polygon) {
+        //  polygon.setMap(null);
+        //}
 
         // Destaca o bairro
         // highlightNeighborhood(place.geometry.location);
@@ -197,6 +206,9 @@
             ]
           };
 
+          // Remove os marcadores antigos
+          clearMarkers();
+          
           // Adiciona o GeoJSON ao mapa
           map.data.addGeoJson(geoConf, "city");
 
@@ -228,6 +240,8 @@
               paths: allLocalMultiPolys[0]
             })
 
+            polygon = googleGeometryMultiPoly[0];
+
             numGeometries = 1;
 
           } else {
@@ -244,12 +258,39 @@
               googleGeometryMultiPoly[i] = new google.maps.Polygon({
                 paths: allLocalMultiPolys[i]
               });
+
+              polygon = googleGeometryMultiPoly[i];
             });
 
             numGeometries = localGeometry.getLength();
           }
 
           
+          //INICIO
+          // Lista de arquivos CSV a serem lidos
+            const files = [
+              './files_csv/border-street.csv',
+              './files_csv/boston-city.csv',
+              //'./files_csv/suffolk-county.csv',
+            ];
+
+            // Ler e processar cada arquivo
+            files.forEach((file) => {
+              fetch(file)
+                .then((response) => {
+                  if (!response.ok) {
+                    throw new Error(`Erro ao carregar o arquivo: ${file}`);
+                  }
+                  return response.text();
+                })
+                .then((data) => {
+                  processCSV(data);
+                })
+                .catch((error) => console.error(error));
+            });
+            //FINAL
+
+
         });
     }
 
@@ -315,32 +356,44 @@
       lines.forEach((line) => {
         const [lat, lng] = line.split(",").map((value) => value.trim());
         if (!isNaN(lat) && !isNaN(lng)) {
-          addMarker(parseFloat(lat), parseFloat(lng));
+          const latLng = new google.maps.LatLng(parseFloat(lat), parseFloat(lng));
+
+          // Verifica se o ponto está dentro do polígono
+          if (google.maps.geometry.poly.containsLocation(latLng, polygon)) {
+            addMarker(parseFloat(lat), parseFloat(lng), line);
+          }
         }
       });
     }
 
-    function addMarker(lat, lng) {
-      let markerTemp = new google.maps.Marker({
+    async function addMarker(lat, lng, data) {
+      
+      const priceTag = document.createElement("div");
+      priceTag.className = "price-tag";
+      priceTag.textContent =  data.split(',')[2] ? data.split(',')[2] : `$ ??k`;
+
+      const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
+      const markerTemp = new AdvancedMarkerElement({
+        map,
         position: { lat, lng },
-        map: map,
+        content: priceTag,
       });
 
-      // Cria um InfoWindow para este marcador
+      markers.push(markerTemp);
+    
+      // Conteúdo do InfoWindow para este marcador
       const infoWindowContent = `
         <div style="max-width: 200px;">
           <h3>[Titulo aqui]</h3>
-          <img src="https://tm.ibxk.com.br/2017/07/20/20143423547820.jpg" alt="sou_cego_:(" style="width: 100%; height: auto;"/>
+          <img src="https://tm.ibxk.com.br/2017/07/20/20143423547820.jpg" alt="imagem" style="width: 100%; height: auto;"/>
           <p>[Descrição]</p>
         </div>
       `;
       const infoWindow = new google.maps.InfoWindow({
         content: infoWindowContent,
       });
-
-      infoWindows.push(infoWindow);
-      
-      // Adiciona evento de clique ao marcador
+    
+      // Adiciona evento de clique ao marcador para abrir o InfoWindow
       markerTemp.addListener("click", () => {
         closeAllInfoWindows(); // Fecha todos os InfoWindows antes de abrir o novo
         infoWindow.open({
@@ -349,13 +402,22 @@
           shouldFocus: false,
         });
       });
+    
     }
-  
+
+    function clearMarkers() {
+      for (let i = 0; i < markers.length; i++) {
+          markers[i].setMap(null); // Remove cada marcador do mapa
+      }
+      markers = []; // Limpa a lista de marcadores
+    }
+    
     function closeAllInfoWindows() {
       infoWindows.forEach((infoWindow) => infoWindow.close());
     }
   </script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.2.1/axios.min.js"></script>
+  <!-- <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjrQ-HaV6j4xbMXyjcfaojOWHvarEwnH4&libraries=places&callback=initMap" async defer></script> -->
   <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCjrQ-HaV6j4xbMXyjcfaojOWHvarEwnH4&libraries=places&callback=initMap" async defer></script>
 </body>
 </html>
