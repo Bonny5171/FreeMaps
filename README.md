@@ -11,3 +11,7 @@ Copy
 ```
 python -m http.server
 ```
+ou 
+```
+php -S 0.0.0.0:8000
+```

@@ -134,7 +134,7 @@
 
         const city = getCityFromAddressComponents(place.address_components);
         const state = getStateFromAddressComponents(place.address_components);
- 
+        debugger
         getCityData(`${city}, ${state}`);
 
       });
@@ -158,7 +158,10 @@
     function getStateFromAddressComponents(addressComponents) {
       for (const component of addressComponents) {
         if (component.types.includes("administrative_area_level_2")) {
-          return component.long_name; // Nome completo do estado
+          // return component.long_name; // Nome completo do estado
+          //GATO
+          var long_n = component.long_name.replace("Condado de ", "");
+          return long_n;
         }
       }
       return null; // Caso não encontre o estado
